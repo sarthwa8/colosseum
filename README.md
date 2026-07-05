@@ -42,6 +42,22 @@ robustness ranking:  [model-y  model-x]     # attack/defense can
 → DIVERGENCE: models that tie on pass rate are separated by adversarial robustness.
 ```
 
+**A real run** (two local Ollama models, `docs/eval-report-sample.txt`) shows the
+honest flip side — and that the tool doesn't invent findings:
+
+```
+model                   games solve%   avgTok  survive%    break%  robustElo
+qwen2.5-coder:1.5b          4   100%      434      100%        0%     1531±0
+llama3.2:latest             4    50%      310      100%        0%     1469±0
+→ no divergence yet (add models/problems, or the field is already stratified by pass rate).
+```
+
+Here the models *don't* tie — qwen solves everything, llama half — so the pass
+rate already separates them and Colosseum correctly reports **no** divergence.
+Divergence surfaces when you feed it models of comparable pass rate; that's the
+regime the eval is built to illuminate, and the mechanism is covered by a unit
+test (`rank.TestReportDetectsDivergence`) and the oracle-validated break demo above.
+
 It's also a spectacle you can watch — and that's deliberate: the matches *are*
 the content, so the project needs zero user base to be interesting. A recruiter
 clicks a replay and sees a finished brawl in ten seconds, then scrolls into the
