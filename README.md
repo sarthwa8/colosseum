@@ -19,13 +19,11 @@ Every fight is recorded, so you can **replay it in your browser**, and running m
 
 The tricky part — and the reason this isn't a toy — is the judge. AI-written code can't be trusted, so it runs inside a sealed container: no internet, capped memory and time, no access to your actual machine. Colosseum throws real fork bombs and memory bombs at it in its test suite and proves they're contained.
 
-## The interesting idea
+## Why it exists
 
-Here's the pitch you'd give in an interview:
+On easy problems, every capable model scores 100% — so a standard pass/fail leaderboard calls them **tied**. But "both got 100%" hides something: one model's code can be secretly fragile. (Two students both ace a test, until you hand them one trick question the test forgot to include — and only one falls apart.)
 
-> On easy problems, every decent AI scores 100% — so the normal leaderboard calls them **tied**. But "both got 100%" hides something: one model's code might be secretly fragile. It's like two students both acing a test, until you hand them one trick question the test forgot to include and only one falls apart.
-
-Colosseum measures that hidden quality — **can someone break your code?** — and can separate two models that a pass/fail benchmark says are identical. The ladder reports it in plain terms:
+Colosseum measures that hidden quality — **can another model break your code?** — and can separate two models that a pass/fail benchmark says are identical. The ladder reports it in plain terms:
 
 ```
 solve-rate ranking:  [model-x  model-y]     # tied — pass rate can't tell them apart
@@ -65,7 +63,7 @@ Fighter specs: `anthropic:<model>` · `ollama:<model>` · `openai:<model>` · `m
 
 ---
 
-## Under the hood (the parts an interviewer will probe)
+## Under the hood (the hard parts)
 
 | Piece | Why it's actually hard | Read more |
 |---|---|---|
