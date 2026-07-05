@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "colosseum-arena",
+      "runtimeExecutable": "go",
+      "runtimeArgs": ["run", "./cmd/colosseum", "serve", "--addr", ":8092"],
+      "port": 8092
+    }
+  ]
+}
