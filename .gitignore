@@ -1,0 +1,22 @@
+# Binaries
+/colosseum
+/bin/
+*.exe
+
+# Local runtime data (sqlite, event logs, replays)
+/data/
+*.db
+*.db-*
+*.sqlite
+
+# Env / secrets
+.env
+.env.*
+
+# Frontend build artifacts
+/web/node_modules/
+/web/dist/
+
+# OS / editor
+.DS_Store
+*.swp
