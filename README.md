@@ -1,207 +1,149 @@
-# Colosseum
+# ⚔ Colosseum
 
-**An adversarial evaluation engine for coding agents — presented as a live AI battleground.**
+**Two AI models fight to write code — and to break each other's — inside a locked-down sandbox, so you can measure which model's code actually holds up, not just which one passes the tests.**
 
-LLMs fight each other at competitive programming on a sandboxed judge. In the
-**Race** format they solve the same problem head-to-head; in **Attack/Defense**
-one model writes a solution and the other writes a test input designed to break
-it, validated against a pinned reference solution. Every match is an append-only
-event log you can replay, and a tournament ladder ranks models with Elo +
-confidence intervals across the axes standard benchmarks ignore.
+![Colosseum Attack/Defense demo](docs/demo.gif)
 
-```
-$ colosseum match --problem max-subarray --a mock:wrong --b mock:reference --format ad
-⚔  Maximum Subarray Sum  ad · mock:wrong vs mock:reference
-  ▸ attack: B → A
-  ⚑ B attacks with input 9⏎-2 1 -3 4 -1 2 1 -5 4
-  ⚔ B → BROKE DEFENDER  defender output disagrees with the reference
-  ▸ attack: A → B
-  ⚔ A → shielded  defender matched the reference
-WINNER: B  (broke_and_survived)
-```
+*Above: model B reads model A's solution, feeds it an edge case that A gets wrong (`BROKE DEFENDER`), then survives A's attack — and wins. Real code, run in a real sandbox, verified against a reference solution.*
 
 ---
 
-## Why this exists (the argument a benchmark can't make)
+## What is this, in plain terms
 
-On easy problems, **pass@1 saturates** — every capable model scores 100%, and the
-standard leaderboard says they're equal. They aren't. Colosseum measures the
-axes a pass-rate benchmark throws away:
+You give two AI models the same coding problem. Each writes a program to solve it. A **judge** safely runs their code and decides who did better. There are two ways to compete:
 
-- **Adversarial robustness** — can another model find an input, valid under the
-  constraints, that your "100%-correct" solution gets wrong? (Attack/Defense Elo)
-- **Efficiency** — tokens and wall-clock time to reach a green solution. (Race)
+- **Race** — both solve the same problem; first to pass all the hidden tests wins. *(measures speed and cost)*
+- **Attack / Defense** — one model writes a solution, the other tries to find an input that **breaks** it. Then they swap. *(measures how robust the code really is)*
 
-**The headline result:** models that *tie on pass rate* get *separated by
-adversarial robustness*. That divergence is the finding, and the ladder reports
-it explicitly:
+Every fight is recorded, so you can **replay it in your browser**, and running many fights produces a **leaderboard** (a chess-style Elo rating for each model).
+
+The tricky part — and the reason this isn't a toy — is the judge. AI-written code can't be trusted, so it runs inside a sealed container: no internet, capped memory and time, no access to your actual machine. Colosseum throws real fork bombs and memory bombs at it in its test suite and proves they're contained.
+
+## The interesting idea
+
+Here's the pitch you'd give in an interview:
+
+> On easy problems, every decent AI scores 100% — so the normal leaderboard calls them **tied**. But "both got 100%" hides something: one model's code might be secretly fragile. It's like two students both acing a test, until you hand them one trick question the test forgot to include and only one falls apart.
+
+Colosseum measures that hidden quality — **can someone break your code?** — and can separate two models that a pass/fail benchmark says are identical. The ladder reports it in plain terms:
 
 ```
-solve-rate ranking:  [model-x  model-y]     # tied — pass rate can't order them
+solve-rate ranking:  [model-x  model-y]     # tied — pass rate can't tell them apart
 robustness ranking:  [model-y  model-x]     # attack/defense can
 → DIVERGENCE: models that tie on pass rate are separated by adversarial robustness.
 ```
 
-**A real run** (two local Ollama coder models, Attack/Defense, `docs/eval-report-sample.txt`)
-shows the honest flip side — the tool doesn't invent findings:
+## Try it in 30 seconds
+
+Needs **Go 1.26+** and **Docker** running (Docker Desktop, OrbStack, or colima). No API key needed — the `mock:` fighters replay built-in solutions and attacks, but the judge and the attack-validation are 100% real.
+
+```bash
+go build -o colosseum ./cmd/colosseum
+
+# The "wow": one model breaks the other's code (this is the GIF above)
+./colosseum match --problem max-subarray --a mock:wrong --b mock:reference --format ad
+
+# Watch every saved match replay in your browser
+./colosseum serve            # → http://localhost:8080
+
+# Prove the sandbox contains hostile code (throws a real fork bomb at it)
+go test ./internal/judge/
+```
+
+Want real AI models instead of the built-in ones? Point at local models (free, via [Ollama](https://ollama.com)) or the Anthropic API:
+
+```bash
+# Free & local
+./colosseum match --problem sum-two --a ollama:qwen2.5-coder:1.5b --b ollama:llama3.2 --format race
+
+# Frontier models (costs a little)
+export ANTHROPIC_API_KEY=...
+./colosseum ladder --fighters anthropic:claude-haiku-4-5,anthropic:claude-sonnet-5 --formats race,ad --rounds 3
+```
+
+Fighter specs: `anthropic:<model>` · `ollama:<model>` · `openai:<model>` · `mock:reference` · `mock:wrong`.
+
+---
+
+## Under the hood (the parts an interviewer will probe)
+
+| Piece | Why it's actually hard | Read more |
+|---|---|---|
+| **The sandbox** | Safely running code written by LLMs *prompted to be adversarial*. Fork bombs, memory bombs, network exfiltration, filesystem escape — all contained, all tested in CI. | [docs/SANDBOX.md](docs/SANDBOX.md) · `internal/judge` |
+| **Attack validation** | An attack only counts if a trusted **reference solution** disagrees with the defender on an input the reference itself handles. No judging by guesswork. | [docs/METHODOLOGY.md](docs/METHODOLOGY.md) · `internal/match/attackdefense.go` |
+| **Event sourcing** | Each match is one append-only log that powers live viewing, replay, *and* the eval's raw data — one source of truth, three uses. | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) · `internal/events` |
+| **Ranking** | Elo with bootstrap confidence intervals, because a ranking from a handful of games is noise — and the ± makes that honest. | `internal/rank` |
+
+### How the pieces fit
+
+```
+   Model A ──┐                              ┌── Model B
+             ▼                              ▼
+        ┌─────────────────────────────────────────┐
+        │  Match  (Race  or  Attack/Defense)       │
+        │  each fighter: solve → get judged → fix  │
+        └──────────────────┬──────────────────────┘
+                           ▼  submits code
+                 Judge  (sealed Docker container)
+            no network · memory/CPU/time caps · read-only
+            non-root · killed if it runs too long
+                           ▼  pass/fail per test
+              Event log  (append-only record of the fight)
+              ┌────────────┬───────────────┐
+              ▼            ▼               ▼
+         watch live     replay        leaderboard
+                       in browser    (Elo + the finding)
+```
+
+Adding a new game type (e.g. code golf) is a new `Format` plugin, not new plumbing. Every match saves a **manifest** (models, problem version, judge image, seed) so any result is reproducible and any replay is auditable.
+
+### The sandbox is tested, not claimed
+
+CI runs real hostile programs against real containers (`internal/judge/sandbox_docker_test.go`):
+
+| Attack | What stops it | Result |
+|---|---|---|
+| `while True: os.fork()` (fork bomb) | process-count limit | contained in ~1s |
+| `while True: pass` | wall-clock watchdog | killed (Time Limit) |
+| allocate memory forever | memory limit | OOM-killed (Memory Limit) |
+| `socket.connect(1.1.1.1:53)` | `--network none` | never reaches the network |
+| `open('/pwned','w')` | read-only filesystem | write fails (Runtime Error) |
+
+Full threat model and the gVisor/Firecracker upgrade path: [docs/SANDBOX.md](docs/SANDBOX.md).
+
+## A real run (honest results)
+
+Two local models in Attack/Defense (`docs/eval-report-sample.txt`) — the tool doesn't invent findings:
 
 ```
 model                   games solve%   avgTok  survive%    break%  robustElo
 qwen2.5-coder:1.5b          3   100%      972      100%        0%    1512±44
 qwen2.5-coder:3b            3    67%     1146      100%        0%    1488±44
-→ no divergence yet (add models/problems, or the field is already stratified by pass rate).
+→ no divergence yet (the field is already stratified by pass rate)
 ```
 
-Two honest readings fall out of this: the models *don't tie* on pass rate (so it's
-already separated, and Colosseum reports **no** divergence rather than faking one),
-and neither landed a break (`break% 0%`) — 1.5–3B models struggle to *craft* a
-valid edge-case attack, which is itself a real result about attacker capability.
-The `±44` is the bootstrap CI honestly flagging that 3 games is thin. Divergence
-needs both a **pass-rate tie** and a **capable attacker** — the regime of frontier
-models; the *mechanism* is proven by a unit test (`rank.TestReportDetectsDivergence`)
-and the oracle-validated break demo above, and the same command scales straight to
-`--fighters anthropic:claude-haiku-4-5,anthropic:claude-sonnet-5`.
-
-It's also a spectacle you can watch — and that's deliberate: the matches *are*
-the content, so the project needs zero user base to be interesting. A recruiter
-clicks a replay and sees a finished brawl in ten seconds, then scrolls into the
-methodology.
-
-## What makes it not the generic "LLM + wrapper" project
-
-| Layer | What's actually hard | Where to look |
-|---|---|---|
-| **Sandbox** | Auto-executing code written by *adversarially-prompted* LLMs. Fork bombs, OOM, network exfiltration, fs escape — all contained, all tested in CI. | [`docs/SANDBOX.md`](docs/SANDBOX.md), `internal/judge` |
-| **Adversarial eval** | An attack only counts if the reference oracle disagrees with the defender on an input the reference itself handles. No judging by vibes. | [`docs/METHODOLOGY.md`](docs/METHODOLOGY.md), `internal/match/attackdefense.go` |
-| **Event sourcing** | One append-only log per match powers live spectating *and* replay *and* the eval's raw data — one source of truth, three consumers. | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), `internal/events` |
-| **Ranking** | Elo with bootstrap confidence intervals, because a ranking from 8 games is noise and the CI shows it. | `internal/rank` |
-
-## Architecture
-
-```
-                 ┌──────────────────────────────────────────┐
-                 │  Match  (state machine + Format plugin)    │
-                 │            Race │ AttackDefense            │
-                 └───────┬───────────────────────┬────────────┘
-   Fighter A ───────────►│  solve→judge→debug     │◄────────── Fighter B
-   (provider:            │  loop, token budgets   │           (Anthropic /
-    anthropic/ollama/    └───────────┬────────────┘            Ollama / mock)
-    openai/mock)                     │ submissions
-                                     ▼
-                          Judge  (Docker sandbox)
-                    per-run container · --network none
-                    memory/pids/cpu limits · read-only rootfs
-                    non-root · wall-clock watchdog
-                                     │ per-case results
-                                     ▼
-                    Event log (append-only, per match)
-                    ┌──────────────┬─────────────────┐
-                    ▼              ▼                 ▼
-               live tail       replay          eval export
-             (reconnect-      (timed         (→ rank: Elo,
-              and-replay)     re-render)      CIs, divergence)
-```
-
-A `Format` is a plugin (`internal/match`): Race and Attack/Defense implement the
-same interface, so adding a format is new logic, not new plumbing. Every match
-carries a **run manifest** (models, prompt persona, problem version, judge image,
-seed, budgets) so results are reproducible and replays are auditable.
-
-## Quickstart
-
-Requires **Go 1.26+** and a **Docker** engine (Docker Desktop, OrbStack, or
-colima). No API key needed for the offline demo — `mock:` fighters replay pinned
-solutions and edge-case attacks.
-
-```bash
-# 1. Judge a single solution against a problem's hidden tests (in the sandbox)
-colosseum judge --problem sum-two --file mysolution.py
-
-# 2. Run an AI-vs-AI match, fully offline, and save a replayable record
-colosseum match --problem max-subarray --a mock:wrong --b mock:reference --format ad
-
-# 3. Replay it from the event log (the same stream the live view renders)
-colosseum replay --file data/matches/<id>.json          # timed
-colosseum replay --file data/matches/<id>.json --jsonl  # structured export
-
-# 4. Run a tournament and print the eval report
-colosseum ladder --fighters mock:reference,mock:wrong --formats race,ad --rounds 2
-
-# 5. Watch replays in the browser (single static binary, no build step)
-colosseum serve   # → http://localhost:8080
-```
-
-The spectator UI (`internal/web`, a `go:embed`'d single-page app — no npm, no
-build) lists every saved match and replays it in-browser from the same event
-log the terminal renders, with a leaderboard fed by the ladder's report.
-
-### Running with real models
-
-```bash
-export ANTHROPIC_API_KEY=...
-colosseum ladder --fighters anthropic:claude-haiku-4-5,anthropic:claude-sonnet-5 \
-  --formats race,ad --rounds 3
-
-# Or free & local via Ollama (OpenAI-compatible endpoint):
-ollama serve && ollama pull qwen2.5-coder
-colosseum ladder --fighters ollama:qwen2.5-coder,ollama:deepseek-coder-v2 --formats ad
-```
-
-Fighter specs: `anthropic:<model>` · `ollama:<model>` · `openai:<model>` ·
-`mock:reference` · `mock:wrong`.
-
-## The sandbox, tested — not claimed
-
-The containment story is enforced by CI, running real hostile programs against
-real containers (`internal/judge/sandbox_docker_test.go`):
-
-| Attack | Control | Asserted outcome |
-|---|---|---|
-| `while True: os.fork()` | `--pids-limit` | contained, non-AC verdict, returns fast |
-| `while True: pass` | wall-clock watchdog | `TLE` |
-| unbounded allocation | `--memory` (swap off) | `MLE` (OOM kill) |
-| `socket.connect(1.1.1.1:53)` | `--network none` | never reaches the network |
-| `open('/pwned','w')` | `--read-only` rootfs | `RE`, no write |
-
-Full threat model and the gVisor/Firecracker upgrade path: [`docs/SANDBOX.md`](docs/SANDBOX.md).
-
-## Testing
-
-```bash
-go test ./...            # everything (Docker tests included)
-go test -short ./...     # skip the Docker integration + security suite
-```
-
-Coverage spans the judge security suite (real containers), the verdict state
-machine, both format plugins, the Elo/CI math, event-log reconnect-replay, and
-end-to-end Race and Attack/Defense matches driven by scripted models against the
-real judge (zero API cost).
+The models *don't tie* on pass rate here, so Colosseum correctly reports **no** divergence rather than faking one. And neither landed a break (`break% 0%`) — small 1.5–3B models can *solve* but can't reliably *craft* an edge-case attack, which is itself a real finding about model capability. The `±44` is the confidence interval honestly flagging that 3 games is a thin sample. A clean divergence needs both a **pass-rate tie** and a **capable attacker** (frontier models) — and the *mechanism* is proven by a unit test (`rank.TestReportDetectsDivergence`) and the break demo in the GIF.
 
 ## Honest limitations
 
-- **Shared-kernel isolation.** Containers are namespaces, not VMs; the `Runner`
-  interface is the seam to swap in gVisor/Firecracker for a hostile-internet
-  deployment. Documented, not hand-waved.
-- **Divergence needs comparable models.** With one strong and one weak fighter,
-  the strong one dominates both axes and nothing diverges — that's honest. The
-  interesting result appears with models of *similar* pass rate; that's what the
-  eval is built to surface.
-- **Toy problems by design.** Real-repo tasks were explicitly out of scope; the
-  novelty is in the adversarial *measurement*, not problem difficulty.
-- **Attacker sees only pass-count feedback** during the debug loop, never the
-  hidden expected outputs — mirroring real judges ("Wrong Answer on test N").
+- **Shared-kernel isolation.** Containers are namespaces, not full VMs; the `Runner` interface is the seam to drop in gVisor/Firecracker for a hostile-internet deployment.
+- **Divergence needs comparable models.** A strong-vs-weak pairing just has the strong one win everything — no divergence, and the tool says so.
+- **Toy problems on purpose.** The novelty is the adversarial *measurement*, not the difficulty of the problems.
+- **The attacker only sees pass counts** during its debug loop, never the hidden expected outputs — mirroring how real judges report "Wrong Answer on test 3".
 
-## Layout
+## Project layout
 
 ```
 cmd/colosseum        # CLI: judge | match | replay | ladder | serve
 internal/judge       # Docker sandbox + CI security suite  ← the crown jewel
-internal/match       # state machine + Race + AttackDefense (oracle-validated)
-internal/agent       # provider-agnostic fighters (anthropic/ollama/openai/mock)
-internal/events      # append-only log, reconnect-replay, JSONL export
-internal/rank        # Elo + bootstrap CIs + divergence report
+internal/match       # match state machine + Race + Attack/Defense
+internal/agent       # fighters (Anthropic / Ollama / OpenAI / mock)
+internal/events      # append-only log, replay, JSONL export
+internal/rank        # Elo + confidence intervals + divergence report
 internal/ladder      # tournament runner
-internal/web         # go:embed'd spectator UI (browser replays + leaderboard)
-problems/            # versioned: statement, hidden cases, constraints, reference
+internal/web         # browser spectator UI (no build step, go:embed)
+problems/            # versioned problems: statement, hidden tests, reference
 docs/                # SANDBOX.md · METHODOLOGY.md · ARCHITECTURE.md
 ```
+
+Built in Go. Run `go test ./...` for the full suite (Docker tests included) or `go test -short ./...` to skip them.
