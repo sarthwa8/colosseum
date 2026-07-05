@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest # ships with a working Docker engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
+      - name: Pre-pull the sandbox image
+        run: docker pull python:3.12-alpine
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      # Runs the full suite, including the sandbox security suite (fork bomb,
+      # OOM, network-exfil, fs-escape) against real containers.
+      - name: Test
+        run: go test -v ./...
