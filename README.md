@@ -42,21 +42,25 @@ robustness ranking:  [model-y  model-x]     # attack/defense can
 → DIVERGENCE: models that tie on pass rate are separated by adversarial robustness.
 ```
 
-**A real run** (two local Ollama models, `docs/eval-report-sample.txt`) shows the
-honest flip side — and that the tool doesn't invent findings:
+**A real run** (two local Ollama coder models, Attack/Defense, `docs/eval-report-sample.txt`)
+shows the honest flip side — the tool doesn't invent findings:
 
 ```
 model                   games solve%   avgTok  survive%    break%  robustElo
-qwen2.5-coder:1.5b          4   100%      434      100%        0%     1531±0
-llama3.2:latest             4    50%      310      100%        0%     1469±0
+qwen2.5-coder:1.5b          3   100%      972      100%        0%    1512±44
+qwen2.5-coder:3b            3    67%     1146      100%        0%    1488±44
 → no divergence yet (add models/problems, or the field is already stratified by pass rate).
 ```
 
-Here the models *don't* tie — qwen solves everything, llama half — so the pass
-rate already separates them and Colosseum correctly reports **no** divergence.
-Divergence surfaces when you feed it models of comparable pass rate; that's the
-regime the eval is built to illuminate, and the mechanism is covered by a unit
-test (`rank.TestReportDetectsDivergence`) and the oracle-validated break demo above.
+Two honest readings fall out of this: the models *don't tie* on pass rate (so it's
+already separated, and Colosseum reports **no** divergence rather than faking one),
+and neither landed a break (`break% 0%`) — 1.5–3B models struggle to *craft* a
+valid edge-case attack, which is itself a real result about attacker capability.
+The `±44` is the bootstrap CI honestly flagging that 3 games is thin. Divergence
+needs both a **pass-rate tie** and a **capable attacker** — the regime of frontier
+models; the *mechanism* is proven by a unit test (`rank.TestReportDetectsDivergence`)
+and the oracle-validated break demo above, and the same command scales straight to
+`--fighters anthropic:claude-haiku-4-5,anthropic:claude-sonnet-5`.
 
 It's also a spectacle you can watch — and that's deliberate: the matches *are*
 the content, so the project needs zero user base to be interesting. A recruiter

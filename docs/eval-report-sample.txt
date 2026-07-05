@@ -1,10 +1,10 @@
-Colosseum eval report — 4 matches
+Colosseum eval report — 3 matches
 ================================================================
 model                   games solve%   avgTok  survive%    break%  robustElo
 ----------------------------------------------------------------
-qwen2.5-coder:1.5b          4   100%      434      100%        0%     1531±0
-llama3.2:latest             4    50%      310      100%        0%     1469±0
+qwen2.5-coder:1.5b          3   100%      972      100%        0%    1512±44
+qwen2.5-coder:3b            3    67%     1146      100%        0%    1488±44
 ================================================================
-solve-rate ranking:  [qwen2.5-coder:1.5b llama3.2:latest]
-robustness ranking:  [qwen2.5-coder:1.5b llama3.2:latest]
+solve-rate ranking:  [qwen2.5-coder:1.5b qwen2.5-coder:3b]
+robustness ranking:  [qwen2.5-coder:1.5b qwen2.5-coder:3b]
 → no divergence yet (add models/problems, or the field is already stratified by pass rate).
