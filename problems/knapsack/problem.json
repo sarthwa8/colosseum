@@ -1,0 +1,11 @@
+{
+  "slug": "knapsack",
+  "title": "0/1 Knapsack",
+  "difficulty": "medium",
+  "version": "1",
+  "statement": "statement.md",
+  "constraints": "constraints.md",
+  "reference": "reference.py",
+  "reference_lang": "python",
+  "limits": { "wall_seconds": 5, "memory_mib": 256 }
+}
