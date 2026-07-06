@@ -34,11 +34,13 @@ type ModelRow struct {
 	Breaks      int     `json:"breaks"`
 	SurviveRate float64 `json:"survive_rate"`
 	BreakRate   float64 `json:"break_rate"`
+	CostUSD     float64 `json:"cost_usd"`
 }
 
 // Report is the full eval output.
 type Report struct {
 	TotalMatches int                       `json:"total_matches"`
+	TotalCostUSD float64                   `json:"total_cost_usd"`
 	Models       []ModelRow                `json:"models"`
 	RaceElo      map[string]CI             `json:"race_elo"`
 	RobustElo    map[string]CI             `json:"robustness_elo"`
@@ -111,6 +113,7 @@ func Build(summaries []MatchSummary, bootstrapIters int, seed int64) Report {
 
 	// Finalize rates and sort rows by solve rate then break rate.
 	out := make([]ModelRow, 0, len(rows))
+	var totalCost float64
 	for _, r := range rows {
 		if r.SolveGames > 0 {
 			r.SolveRate = float64(r.Solved) / float64(r.SolveGames)
@@ -122,6 +125,7 @@ func Build(summaries []MatchSummary, bootstrapIters int, seed int64) Report {
 			r.SurviveRate = float64(r.Survivals) / float64(r.ADGames)
 			r.BreakRate = float64(r.Breaks) / float64(r.ADGames)
 		}
+		totalCost += r.CostUSD
 		out = append(out, *r)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -133,6 +137,7 @@ func Build(summaries []MatchSummary, bootstrapIters int, seed int64) Report {
 
 	return Report{
 		TotalMatches: len(summaries),
+		TotalCostUSD: totalCost,
 		Models:       out,
 		RaceElo:      BootstrapCI(raceResults, defaultK, bootstrapIters, seed),
 		RobustElo:    BootstrapCI(robustResults, defaultK, bootstrapIters, seed+1),
@@ -147,6 +152,7 @@ func accrue(r *ModelRow, s match.FighterScore, format string) {
 		r.Solved++
 	}
 	r.tokensTotal += s.TokensIn + s.TokensOut
+	r.CostUSD += s.CostUSD
 	if format == "attack_defense" {
 		r.ADGames++
 		if s.Survived {
@@ -228,14 +234,15 @@ func (r Report) Diverges() bool {
 func (r Report) Render(w io.Writer) {
 	fmt.Fprintf(w, "Colosseum eval report — %d matches\n", r.TotalMatches)
 	fmt.Fprintln(w, "================================================================")
-	fmt.Fprintf(w, "%-22s %6s %6s %8s %9s %9s %10s\n", "model", "games", "solve%", "avgTok", "survive%", "break%", "robustElo")
+	fmt.Fprintf(w, "%-22s %6s %6s %8s %9s %9s %10s %8s\n", "model", "games", "solve%", "avgTok", "survive%", "break%", "robustElo", "cost$")
 	fmt.Fprintln(w, "----------------------------------------------------------------")
 	for _, m := range r.Models {
-		fmt.Fprintf(w, "%-22s %6d %5.0f%% %8.0f %8.0f%% %8.0f%% %10s\n",
+		fmt.Fprintf(w, "%-22s %6d %5.0f%% %8.0f %8.0f%% %8.0f%% %10s %8.2f\n",
 			m.Model, m.Games, m.SolveRate*100, m.AvgTokens,
-			m.SurviveRate*100, m.BreakRate*100, eloCell(r.RobustElo[m.Model]))
+			m.SurviveRate*100, m.BreakRate*100, eloCell(r.RobustElo[m.Model]), m.CostUSD)
 	}
 	fmt.Fprintln(w, "================================================================")
+	fmt.Fprintf(w, "total cost: $%.2f\n", r.TotalCostUSD)
 	fmt.Fprintf(w, "solve-rate ranking:  %v\n", r.RankingBySolveRate())
 	fmt.Fprintf(w, "robustness ranking:  %v\n", r.RankingByRobustness())
 	if r.Diverges() {

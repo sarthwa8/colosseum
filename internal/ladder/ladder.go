@@ -31,7 +31,8 @@ type Config struct {
 	Rounds      int // times to replay each (pair, problem, format) combination
 	Judge       *judge.Judge
 	MaxIters    int
-	TokenBudget int
+	TokenBudget int // per-fighter tokens per match; 0 = unlimited
+	MaxTokens   int // per-completion output cap; 0 = default 4096
 	DataDir     string // where match records are saved ("" = don't persist)
 	Seed        int64
 	Progress    func(done, total int, rec match.Record)
@@ -50,6 +51,9 @@ type pairing struct {
 func Run(ctx context.Context, cfg Config) ([]rank.MatchSummary, error) {
 	if cfg.Rounds < 1 {
 		cfg.Rounds = 1
+	}
+	if cfg.MaxTokens <= 0 {
+		cfg.MaxTokens = 4096
 	}
 	var schedule []pairing
 	for i := 0; i < len(cfg.Fighters); i++ {
@@ -74,8 +78,8 @@ func Run(ctx context.Context, cfg Config) ([]rank.MatchSummary, error) {
 		}
 		fa, fb := cfg.Fighters[p.i], cfg.Fighters[p.j]
 		fighters := map[string]agent.Config{
-			"A": {ID: "A", Model: fa.Label, Provider: fa.New(p.prob), MaxTokens: 4096, Temperature: 0.7},
-			"B": {ID: "B", Model: fb.Label, Provider: fb.New(p.prob), MaxTokens: 4096, Temperature: 0.7},
+			"A": {ID: "A", Model: fa.Label, Provider: fa.New(p.prob), MaxTokens: cfg.MaxTokens, Temperature: 0.7},
+			"B": {ID: "B", Model: fb.Label, Provider: fb.New(p.prob), MaxTokens: cfg.MaxTokens, Temperature: 0.7},
 		}
 		m := match.New(p.prob, cfg.Judge, fighters, []string{"A", "B"}, p.format, cfg.MaxIters, cfg.TokenBudget)
 		outcome, err := m.Run(ctx, p.format)

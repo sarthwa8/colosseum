@@ -115,6 +115,8 @@ func parseFighter(spec, id string, prob *problem.Problem) (agent.Config, error) 
 			base = "https://api.openai.com/v1"
 		}
 		cfg.Provider = agent.NewOpenAICompatProvider(base, os.Getenv("OPENAI_API_KEY"), "openai")
+	case "gemini":
+		cfg.Provider = agent.NewGeminiProvider(os.Getenv("GEMINI_BASE_URL"), os.Getenv("GEMINI_API_KEY"))
 	case "mock":
 		// Role-aware offline fighters: they defend with a solution and, when
 		// prompted to attack, submit one of the problem's own edge-case inputs —
@@ -141,7 +143,7 @@ func parseFighter(spec, id string, prob *problem.Problem) (agent.Config, error) 
 			return agent.Config{}, fmt.Errorf("mock model must be 'reference' or 'wrong', got %q", model)
 		}
 	default:
-		return agent.Config{}, fmt.Errorf("unknown provider %q (use anthropic, ollama, openai, or mock)", provider)
+		return agent.Config{}, fmt.Errorf("unknown provider %q (use anthropic, gemini, ollama, openai, or mock)", provider)
 	}
 	return cfg, nil
 }

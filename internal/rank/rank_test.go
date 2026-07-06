@@ -113,3 +113,43 @@ func TestReportDetectsDivergence(t *testing.T) {
 		t.Fatalf("break rates wrong: robust=%v fragile=%v", robustRow.BreakRate, fragileRow.BreakRate)
 	}
 }
+
+// Cost must aggregate per model and in total, so the report doubles as the
+// study's spend receipt.
+func TestReportAggregatesCost(t *testing.T) {
+	summaries := []MatchSummary{
+		{
+			Format: "race",
+			Outcome: match.Outcome{
+				WinnerID: "A", Reason: "solved",
+				Scores: map[string]match.FighterScore{
+					"A": {Model: "paid", Solved: true, CostUSD: 0.05},
+					"B": {Model: "free", Solved: true, CostUSD: 0},
+				},
+			},
+		},
+		{
+			Format: "attack_defense",
+			Outcome: match.Outcome{
+				WinnerID: "A", Reason: "broke_and_survived",
+				Scores: map[string]match.FighterScore{
+					"A": {Model: "paid", Solved: true, CostUSD: 0.15},
+					"B": {Model: "free", Solved: true, CostUSD: 0},
+				},
+			},
+		},
+	}
+	rep := Build(summaries, 50, 1)
+	var paid ModelRow
+	for _, m := range rep.Models {
+		if m.Model == "paid" {
+			paid = m
+		}
+	}
+	if math.Abs(paid.CostUSD-0.20) > 1e-9 {
+		t.Fatalf("paid model cost = %v, want 0.20", paid.CostUSD)
+	}
+	if math.Abs(rep.TotalCostUSD-0.20) > 1e-9 {
+		t.Fatalf("total cost = %v, want 0.20", rep.TotalCostUSD)
+	}
+}

@@ -27,6 +27,9 @@ func cmdLadder(args []string) {
 	formatsCSV := fs.String("formats", "race,ad", "comma-separated formats (race, ad)")
 	rounds := fs.Int("rounds", 1, "rounds per (pair, problem, format)")
 	maxIters := fs.Int("max-iters", 3, "max debug iterations per fighter")
+	budget := fs.Int("budget", 0, "per-fighter token budget per match (0 = unlimited)")
+	maxTokens := fs.Int("max-tokens", 4096, "per-completion output token cap")
+	dryRun := fs.Bool("dry-run", false, "print the schedule and worst-case cost estimate, then exit without running anything")
 	dir := fs.String("problems-dir", "problems", "problems root")
 	dataDir := fs.String("data-dir", "data/matches", "where to save match records")
 	outJSON := fs.String("out", "data/report.json", "eval report JSON output")
@@ -65,11 +68,18 @@ func cmdLadder(args []string) {
 
 	// Build fighters.
 	var fighters []ladder.Fighter
+	seen := map[string]bool{}
 	for _, spec := range splitCSV(*fightersCSV) {
 		f, err := fighterFactory(spec)
 		if err != nil {
 			fatal("fighter %q: %v", spec, err)
 		}
+		// The report keys rows and Elo on the label; duplicates would merge
+		// two fighters into one row and corrupt the ranking.
+		if seen[f.Label] {
+			fatal("duplicate fighter label %q — each fighter needs a distinct model", f.Label)
+		}
+		seen[f.Label] = true
 		fighters = append(fighters, f)
 	}
 	if len(fighters) < 2 {
@@ -89,16 +99,28 @@ func cmdLadder(args []string) {
 		}
 	}
 
+	// Dry run: schedule + worst-case cost, no Docker, no provider, no key.
+	if *dryRun {
+		printDryRun(ladder.Config{
+			Fighters: fighters, Problems: probs, Formats: formats,
+			Rounds: *rounds, MaxIters: *maxIters,
+			TokenBudget: *budget, MaxTokens: *maxTokens,
+		})
+		return
+	}
+
 	j := judge.New(judge.NewDockerRunner(*docker))
 	cfg := ladder.Config{
-		Fighters: fighters,
-		Problems: probs,
-		Formats:  formats,
-		Rounds:   *rounds,
-		Judge:    j,
-		MaxIters: *maxIters,
-		DataDir:  *dataDir,
-		Seed:     *seed,
+		Fighters:    fighters,
+		Problems:    probs,
+		Formats:     formats,
+		Rounds:      *rounds,
+		Judge:       j,
+		MaxIters:    *maxIters,
+		TokenBudget: *budget,
+		MaxTokens:   *maxTokens,
+		DataDir:     *dataDir,
+		Seed:        *seed,
 		Progress: func(done, total int, rec match.Record) {
 			o := rec.Outcome
 			w := o.WinnerID
@@ -163,6 +185,9 @@ func fighterFactory(spec string) (ladder.Fighter, error) {
 		}
 		p := agent.NewOpenAICompatProvider(base, os.Getenv("OPENAI_API_KEY"), "openai")
 		return ladder.Fighter{Label: model, New: func(*problem.Problem) agent.Provider { return p }}, nil
+	case "gemini":
+		p := agent.NewGeminiProvider(os.Getenv("GEMINI_BASE_URL"), os.Getenv("GEMINI_API_KEY"))
+		return ladder.Fighter{Label: model, New: func(*problem.Problem) agent.Provider { return p }}, nil
 	case "mock":
 		if model != "reference" && model != "wrong" {
 			return ladder.Fighter{}, fmt.Errorf("mock model must be 'reference' or 'wrong'")
@@ -186,7 +211,63 @@ func fighterFactory(spec string) (ladder.Fighter, error) {
 			})
 		}}, nil
 	default:
-		return ladder.Fighter{}, fmt.Errorf("unknown provider %q", provider)
+		return ladder.Fighter{}, fmt.Errorf("unknown provider %q (use anthropic, gemini, ollama, openai, or mock)", provider)
+	}
+}
+
+// printDryRun shows what a ladder run would cost before anyone pays for it:
+// the schedule size and each model's worst-case spend (all iterations used,
+// every completion at the max-tokens cap). Real runs land well below this.
+func printDryRun(cfg ladder.Config) {
+	est := ladder.EstimateWorstCase(cfg)
+
+	var formatNames []string
+	for _, f := range cfg.Formats {
+		formatNames = append(formatNames, f.Name())
+	}
+	fmt.Printf("%s  %d fighters · %d problems · %v · %d rounds\n",
+		tui.Bold("⚔  ladder (dry run)"), len(cfg.Fighters), len(cfg.Problems), formatNames, cfg.Rounds)
+	fmt.Println(tui.Dim(strings.Repeat("─", 60)))
+	fmt.Printf("matches:      %d\n", est.Matches)
+	fmt.Printf("max-iters:    %d   max-tokens: %d   budget/fighter/match: %s\n",
+		cfg.MaxIters, cfg.MaxTokens, budgetStr(cfg.TokenBudget))
+	fmt.Println()
+	fmt.Printf("%-28s %16s\n", "model", "worst-case cost")
+	for _, f := range cfg.Fighters {
+		fmt.Printf("%-28s %15.2f$\n", f.Label, est.PerModel[f.Label])
+	}
+	fmt.Println(tui.Dim(strings.Repeat("─", 60)))
+	fmt.Printf("%s $%.2f  %s\n", tui.Bold("worst-case total:"), est.TotalUSD,
+		tui.Dim("(real spend is typically 3–10x lower; $0.00 = unknown/local model)"))
+
+	// Point out any provider that will fail at run time for want of a key.
+	for _, f := range cfg.Fighters {
+		name := f.New(cfg.Problems[0]).Name()
+		if env, ok := keyEnvFor(name); ok && os.Getenv(env) == "" {
+			fmt.Printf("%s %s fighter %q needs %s (not set)\n", tui.Bold("!"), name, f.Label, env)
+		}
+	}
+	fmt.Println(tui.Dim("dry run only — nothing was executed and no API was called."))
+}
+
+func budgetStr(b int) string {
+	if b <= 0 {
+		return "unlimited"
+	}
+	return fmt.Sprintf("%d tokens", b)
+}
+
+// keyEnvFor maps a provider name to the env var its API key comes from.
+func keyEnvFor(provider string) (string, bool) {
+	switch provider {
+	case "anthropic":
+		return "ANTHROPIC_API_KEY", true
+	case "gemini":
+		return "GEMINI_API_KEY", true
+	case "openai":
+		return "OPENAI_API_KEY", true
+	default: // ollama, mock — no key needed
+		return "", false
 	}
 }
 

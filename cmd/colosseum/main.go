@@ -57,7 +57,7 @@ Commands:
   ladder   Run a tournament and print the eval report (Elo + robustness divergence)
   serve    Start the browser spectator UI to watch match replays
 
-Fighter specs: anthropic:claude-haiku-4-5 · ollama:qwen2.5-coder · mock:reference · mock:wrong
+Fighter specs: anthropic:claude-haiku-4-5 · gemini:gemini-3.5-flash · ollama:qwen2.5-coder · mock:reference · mock:wrong
 `)
 }
 
