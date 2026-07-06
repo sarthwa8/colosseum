@@ -48,18 +48,25 @@ go build -o colosseum ./cmd/colosseum
 go test ./internal/judge/
 ```
 
-Want real AI models instead of the built-in ones? Point at local models (free, via [Ollama](https://ollama.com)) or the Anthropic API:
+Want real AI models instead of the built-in ones? Point at local models (free, via [Ollama](https://ollama.com)) or frontier APIs:
 
 ```bash
 # Free & local
 ./colosseum match --problem sum-two --a ollama:qwen2.5-coder:1.5b --b ollama:llama3.2 --format race
 
-# Frontier models (costs a little)
-export ANTHROPIC_API_KEY=...
-./colosseum ladder --fighters anthropic:claude-haiku-4-5,anthropic:claude-sonnet-5 --formats race,ad --rounds 3
+# See what a frontier run would cost BEFORE paying for it (no key needed)
+./colosseum ladder --fighters anthropic:claude-opus-4-8,gemini:gemini-3.1-pro \
+  --formats race,ad --budget 60000 --max-tokens 16384 --dry-run
+
+# Frontier models (the report prints what you actually spent)
+export ANTHROPIC_API_KEY=... GEMINI_API_KEY=...
+./colosseum ladder --fighters anthropic:claude-opus-4-8,gemini:gemini-3.1-pro \
+  --formats race,ad --rounds 1 --budget 60000 --max-tokens 16384
 ```
 
-Fighter specs: `anthropic:<model>` · `ollama:<model>` · `openai:<model>` · `mock:reference` · `mock:wrong`.
+Fighter specs: `anthropic:<model>` · `gemini:<model>` · `ollama:<model>` · `openai:<model>` · `mock:reference` · `mock:wrong`.
+
+Cost controls: `--dry-run` prints the schedule and a worst-case dollar ceiling per model and exits; `--budget` caps each fighter's tokens per match (exhaustion = honest forfeit); `--max-tokens` caps each completion; the eval report carries a `cost$` column and total so every run doubles as its own receipt.
 
 ---
 
@@ -126,7 +133,7 @@ The models *don't tie* on pass rate here, so Colosseum correctly reports **no** 
 
 - **Shared-kernel isolation.** Containers are namespaces, not full VMs; the `Runner` interface is the seam to drop in gVisor/Firecracker for a hostile-internet deployment.
 - **Divergence needs comparable models.** A strong-vs-weak pairing just has the strong one win everything — no divergence, and the tool says so.
-- **Toy problems on purpose.** The novelty is the adversarial *measurement*, not the difficulty of the problems.
+- **Problems are small but edge-case-rich on purpose.** The 12 problems (easy through hard) are chosen for attack surface — truncating division, negative denominators, rotation-by-zero, O(log n)-or-TLE — not for algorithmic depth. The novelty is the adversarial *measurement*.
 - **The attacker only sees pass counts** during its debug loop, never the hidden expected outputs — mirroring how real judges report "Wrong Answer on test 3".
 
 ## Project layout
