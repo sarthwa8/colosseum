@@ -48,6 +48,23 @@ func NewOpenAICompatProvider(base, apiKey, label string) *OpenAICompatProvider {
 	}
 }
 
+// NewGeminiProvider targets Google's OpenAI-compatible Gemini endpoint. base ""
+// defaults to the public endpoint; the key is GEMINI_API_KEY (passed by the
+// caller). Pro-tier Gemini models think by default and thinking tokens are
+// billed as output *and* count against max_tokens — run them with a generous
+// per-completion cap (e.g. 16384) or the reply can be all thought and no code.
+func NewGeminiProvider(base, apiKey string) *OpenAICompatProvider {
+	if base == "" {
+		base = "https://generativelanguage.googleapis.com/v1beta/openai"
+	}
+	return &OpenAICompatProvider{
+		baseURL: base,
+		apiKey:  apiKey,
+		label:   "gemini",
+		http:    &http.Client{Timeout: 5 * time.Minute},
+	}
+}
+
 func (p *OpenAICompatProvider) Name() string { return p.label }
 
 type ocMessage struct {
@@ -56,9 +73,11 @@ type ocMessage struct {
 }
 
 type ocRequest struct {
-	Model    string      `json:"model"`
-	Messages []ocMessage `json:"messages"`
-	Stream   bool        `json:"stream"`
+	Model       string      `json:"model"`
+	Messages    []ocMessage `json:"messages"`
+	Stream      bool        `json:"stream"`
+	MaxTokens   int         `json:"max_tokens,omitempty"`
+	Temperature float64     `json:"temperature,omitempty"`
 }
 
 type ocResponse struct {
@@ -83,29 +102,20 @@ func (p *OpenAICompatProvider) Complete(ctx context.Context, req Request) (Respo
 		msgs = append(msgs, ocMessage{Role: string(m.Role), Content: m.Content})
 	}
 
-	body, err := json.Marshal(ocRequest{Model: req.Model, Messages: msgs, Stream: false})
+	body, err := json.Marshal(ocRequest{
+		Model:       req.Model,
+		Messages:    msgs,
+		Stream:      false,
+		MaxTokens:   req.MaxTokens,
+		Temperature: req.Temperature,
+	})
 	if err != nil {
 		return Response{}, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
+	raw, err := p.post(ctx, body)
 	if err != nil {
 		return Response{}, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if p.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-	}
-
-	resp, err := p.http.Do(httpReq)
-	if err != nil {
-		return Response{}, fmt.Errorf("%s request: %w", p.label, err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return Response{}, fmt.Errorf("%s returned %d: %s", p.label, resp.StatusCode, truncate(string(raw), 300))
 	}
 
 	var parsed ocResponse
@@ -127,6 +137,45 @@ func (p *OpenAICompatProvider) Complete(ctx context.Context, req Request) (Respo
 		usage = estimateUsage(req, text)
 	}
 	return Response{Text: text, Usage: usage}, nil
+}
+
+// compatRetryDelay is how long post waits before its single 429/503 retry.
+// Package-level so tests can shrink it.
+var compatRetryDelay = 5 * time.Second
+
+// post sends the request body, retrying once on 429/503 so a transient
+// rate-limit blip doesn't become a forfeit that skews ladder results.
+func (p *OpenAICompatProvider) post(ctx context.Context, body []byte) ([]byte, error) {
+	for attempt := 0; ; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		if p.apiKey != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+		}
+
+		resp, err := p.http.Do(httpReq)
+		if err != nil {
+			return nil, fmt.Errorf("%s request: %w", p.label, err)
+		}
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			return raw, nil
+		}
+		retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable
+		if !retryable || attempt >= 1 {
+			return nil, fmt.Errorf("%s returned %d: %s", p.label, resp.StatusCode, truncate(string(raw), 300))
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(compatRetryDelay):
+		}
+	}
 }
 
 func truncate(s string, n int) string {

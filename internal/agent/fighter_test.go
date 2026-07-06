@@ -58,6 +58,14 @@ func TestCostUSD(t *testing.T) {
 	if c := CostUSD("claude-haiku-4-5-20251001", Usage{OutputTokens: 1_000_000}); c != 5.0 {
 		t.Errorf("suffixed cost = %v, want 5.0", c)
 	}
+	// Gemini rates: 3.1 Pro is $2/MTok in, $12/MTok out.
+	if c := CostUSD("gemini-3.1-pro", Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000}); c != 14.0 {
+		t.Errorf("gemini pro cost = %v, want 14.0", c)
+	}
+	// Longest prefix wins: a flash-lite preview id must not price as flash.
+	if c := CostUSD("gemini-3.1-flash-lite-preview-06-17", Usage{OutputTokens: 1_000_000}); c != 1.5 {
+		t.Errorf("flash-lite preview cost = %v, want 1.5 (lite rate, not flash)", c)
+	}
 }
 
 func TestMockProvider(t *testing.T) {
