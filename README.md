@@ -142,13 +142,33 @@ The models *don't tie* on pass rate here, so Colosseum correctly reports **no** 
 cmd/colosseum        # CLI: judge | match | replay | ladder | serve
 internal/judge       # Docker sandbox + CI security suite  ← the crown jewel
 internal/match       # match state machine + Race + Attack/Defense
-internal/agent       # fighters (Anthropic / Ollama / OpenAI / mock)
+internal/agent       # fighters (Anthropic / Gemini / Ollama / OpenAI / mock)
 internal/events      # append-only log, replay, JSONL export
 internal/rank        # Elo + confidence intervals + divergence report
 internal/ladder      # tournament runner
-internal/web         # browser spectator UI (no build step, go:embed)
+internal/web         # spectator UI server + the committed React bundle (go:embed)
+web/                 # spectator UI source (React 19 · Vite · Tailwind v4)
 problems/            # versioned problems: statement, hidden tests, reference
 docs/                # SANDBOX.md · METHODOLOGY.md · ARCHITECTURE.md
 ```
+
+### Working on the spectator UI
+
+`go build` needs no Node toolchain: the built bundle is committed to
+`internal/web/dist` and `go:embed`ed, because `go:embed` resolves at compile
+time. To change the UI:
+
+```bash
+cd web && npm install
+
+# live-reload against a running `colosseum serve` (proxies /api to :8080)
+npm run dev
+
+# rebuild the committed bundle, then rebuild the binary
+npm run build && cd .. && go build -o colosseum ./cmd/colosseum
+```
+
+CI fails if `internal/web/dist` is stale relative to `web/src`, so the embedded
+bundle can't silently drift from its source.
 
 Built in Go. Run `go test ./...` for the full suite (Docker tests included) or `go test -short ./...` to skip them.

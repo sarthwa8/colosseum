@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 /**
  * Character-scramble reveal. Adapted from the React Bits `DecryptedText`
@@ -33,7 +33,6 @@ export default function DecryptedText({
   trigger,
 }: DecryptedTextProps) {
   const [shown, setShown] = useState(text)
-  const raf = useRef<number | null>(null)
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -62,10 +61,7 @@ export default function DecryptedText({
     }
     timer = window.setTimeout(tick, speed)
 
-    return () => {
-      window.clearTimeout(timer)
-      if (raf.current) cancelAnimationFrame(raf.current)
-    }
+    return () => window.clearTimeout(timer)
   }, [text, speed, perChar, trigger])
 
   return (

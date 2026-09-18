@@ -29,3 +29,41 @@ jobs:
       # OOM, network-exfil, fs-escape) against real containers.
       - name: Test
         run: go test -v ./...
+
+  # The spectator UI is a Vite bundle committed under internal/web/dist so
+  # `go build` works without a Node toolchain. That means the committed bundle
+  # can silently drift from web/src — this job fails if it has.
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+        working-directory: web
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+        working-directory: web
+
+      - name: Lint
+        run: npm run lint
+        working-directory: web
+
+      - name: Build
+        run: npm run build
+        working-directory: web
+
+      - name: Committed bundle is up to date
+        run: |
+          if ! git diff --quiet -- internal/web/dist; then
+            echo "::error::internal/web/dist is stale — run 'npm run build' in web/ and commit the result."
+            git diff --stat -- internal/web/dist
+            exit 1
+          fi

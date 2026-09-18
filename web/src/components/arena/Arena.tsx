@@ -14,16 +14,19 @@ export default function Arena({ record }: { record: MatchRecord }) {
   const { state } = replay
   const man = record.manifest
 
-  // The break flash is a one-frame signal from the reducer; hold it long
-  // enough to see, then clear.
+  // The break flash is a one-frame signal from the reducer; hold it long enough
+  // to see, then clear. breakFlash is a fresh object only on the exact event
+  // that caused the break (null on every other), and the projection is memoized
+  // on the cursor — so depending on the object itself fires exactly once per
+  // break, including when the viewer scrubs backward and crosses it again.
   const [impact, setImpact] = useState<{ attacker: Side; defender: Side } | null>(null)
+  const flash = state.breakFlash
   useEffect(() => {
-    if (!state.breakFlash) return
-    const attacker = state.breakFlash.actor
-    setImpact({ attacker, defender: attacker === 'A' ? 'B' : 'A' })
+    if (!flash) return
+    setImpact({ attacker: flash.actor, defender: flash.actor === 'A' ? 'B' : 'A' })
     const t = setTimeout(() => setImpact(null), 700)
     return () => clearTimeout(t)
-  }, [state.breakFlash?.seq])
+  }, [flash])
 
   const winnerId = replay.atEnd || state.finished ? record.outcome?.winner_id : ''
   const isAD = man.format === 'attack_defense'
