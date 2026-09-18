@@ -76,7 +76,14 @@ export default function App() {
         </header>
 
         <div className="flex flex-1 flex-col gap-4 p-4 lg:grid lg:grid-cols-[300px_1fr] lg:items-start">
-          <aside className="flex max-h-[calc(100vh-5.5rem)] flex-col gap-4 overflow-y-auto lg:sticky lg:top-[4.25rem]">
+          {/*
+            The height clamp + overflow only apply at lg, where the sidebar is a
+            real sticky column. On a phone the sidebar stacks, and clamping it
+            there creates a scroll trap: the page never moves because the scroll
+            is swallowed by the sidebar's own overflow. Arena goes first on
+            mobile so the content you came for isn't below two screens of list.
+          */}
+          <aside className="order-2 flex flex-col gap-4 lg:order-1 lg:sticky lg:top-[4.25rem] lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto">
             <section>
               <SectionTitle>Standings</SectionTitle>
               <Leaderboard report={report} />
@@ -91,7 +98,7 @@ export default function App() {
             </section>
           </aside>
 
-          <main className="min-w-0">
+          <main className="order-1 min-w-0 lg:order-2">
             {loadError ? (
               <EmptyState title="Could not load that match" detail={loadError} />
             ) : record ? (
