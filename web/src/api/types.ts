@@ -2,7 +2,9 @@
 // internal/rank, internal/web/server.go). The event log is the single source of
 // truth for a match; every view here is a projection of it.
 
-export type Verdict = 'AC' | 'WA' | 'RE' | 'CE' | 'TLE' | 'MLE' | 'OLE'
+/** Mirrors judge.Verdict — including IE, which the judge emits when it fails
+ *  itself (docker missing, etc.) rather than when the submission is wrong. */
+export type Verdict = 'AC' | 'WA' | 'RE' | 'CE' | 'TLE' | 'MLE' | 'OLE' | 'IE'
 
 export type EventType =
   | 'match_scheduled'
@@ -136,6 +138,16 @@ const num = (p: Record<string, unknown> | undefined, k: string): number =>
 const bool = (p: Record<string, unknown> | undefined, k: string): boolean =>
   p?.[k] === true
 
+const VERDICTS = ['AC', 'WA', 'RE', 'CE', 'TLE', 'MLE', 'OLE', 'IE'] as const
+
+/**
+ * Narrow an arbitrary payload string to a known verdict. A blind cast would let
+ * an unrecognized value reach the badge's tone lookup and render `undefined`
+ * into a className; anything unknown is treated as an internal error.
+ */
+const asVerdict = (v: string): Verdict =>
+  (VERDICTS as readonly string[]).includes(v) ? (v as Verdict) : 'IE'
+
 export const payload = {
   phase: (e: MatchEvent) => ({
     phase: str(e.payload, 'phase'),
@@ -145,7 +157,7 @@ export const payload = {
   thinking: (e: MatchEvent) => ({ iteration: num(e.payload, 'iteration') }),
   code: (e: MatchEvent) => ({ code: str(e.payload, 'code') }),
   submission: (e: MatchEvent) => ({
-    verdict: (str(e.payload, 'verdict') || 'WA') as Verdict,
+    verdict: asVerdict(str(e.payload, 'verdict')),
     passed: num(e.payload, 'passed'),
     total: num(e.payload, 'total'),
   }),
@@ -172,6 +184,9 @@ export const VERDICT_TONE: Record<Verdict, 'pass' | 'fail' | 'limit'> = {
   TLE: 'limit',
   MLE: 'limit',
   OLE: 'limit',
+  // Not the fighter's fault — an infrastructure failure, tinted like a limit
+  // rather than a wrong answer.
+  IE: 'limit',
 }
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
@@ -182,4 +197,5 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   TLE: 'Time Limit',
   MLE: 'Memory Limit',
   OLE: 'Output Limit',
+  IE: 'Judge Internal Error',
 }

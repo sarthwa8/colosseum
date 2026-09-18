@@ -32,9 +32,14 @@ const KIND_CLASS: Record<FeedEntry['kind'], string> = {
 export default function EventFeed({ feed }: { feed: FeedEntry[] }) {
   const scroller = useRef<HTMLDivElement>(null)
 
+  // Only follow the tail if the reader is already at it. Force-scrolling on
+  // every event yanks anyone who scrolled up to read an earlier entry while
+  // playback continues.
   useEffect(() => {
     const el = scroller.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (distanceFromBottom < 48) el.scrollTop = el.scrollHeight
   }, [feed.length])
 
   return (
@@ -48,9 +53,11 @@ export default function EventFeed({ feed }: { feed: FeedEntry[] }) {
 
       <div ref={scroller} className="flex-1 overflow-y-auto px-3 py-2">
         {feed.length === 0 ? (
-          <p className="py-6 text-center text-xs text-ink-faint">waiting for first event…</p>
+          <p className="py-6 text-center text-xs text-ink-dim">waiting for first event…</p>
         ) : (
-          <ul className="space-y-1">
+          /* role="log" tells assistive tech this is an append-only stream, so
+             new entries are read incrementally rather than re-reading the lot. */
+          <ul role="log" className="space-y-1">
             <AnimatePresence initial={false}>
               {feed.map(entry => (
                 <motion.li

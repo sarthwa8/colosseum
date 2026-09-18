@@ -1,7 +1,8 @@
-import { AnimatePresence, motion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { useEffect, useRef, useState } from 'react'
 import { Swords } from 'lucide-react'
 import type { MatchRecord, Side } from '../../api/types'
+import type { ReplayState } from '../../replay/state'
 import { useReplay } from '../../replay/useReplay'
 import DecryptedText from '../text/DecryptedText'
 import EventFeed from './EventFeed'
@@ -14,29 +15,50 @@ export default function Arena({ record }: { record: MatchRecord }) {
   const { state } = replay
   const man = record.manifest
 
-  // The break flash is a one-frame signal from the reducer; hold it long enough
-  // to see, then clear. breakFlash is a fresh object only on the exact event
-  // that caused the break (null on every other), and the projection is memoized
-  // on the cursor — so depending on the object itself fires exactly once per
-  // break, including when the viewer scrubs backward and crosses it again.
-  const [impact, setImpact] = useState<{ attacker: Side; defender: Side } | null>(null)
+  const reduceMotion = useReducedMotion()
+
+  // The break flash is a one-frame signal from the reducer: `breakFlash` is an
+  // object only on the exact event that caused the break, and null on every
+  // other. That means the effect's dependency flips back to null on the very
+  // next cursor tick — so the hold timer must NOT be owned by the effect's
+  // cleanup, or React cancels it before it can fire and `impact` latches on
+  // forever (no second flash, and a card stuck mid-shake).
+  const [impact, setImpact] = useState<{ attacker: Side; defender: Side; seq: number } | null>(null)
+  const hold = useRef<number | undefined>(undefined)
   const flash = state.breakFlash
+
   useEffect(() => {
     if (!flash) return
-    setImpact({ attacker: flash.actor, defender: flash.actor === 'A' ? 'B' : 'A' })
-    const t = setTimeout(() => setImpact(null), 700)
-    return () => clearTimeout(t)
+    window.clearTimeout(hold.current)
+    setImpact({ attacker: flash.actor, defender: flash.actor === 'A' ? 'B' : 'A', seq: flash.seq })
+    hold.current = window.setTimeout(() => setImpact(null), 700)
   }, [flash])
+
+  // Seeking away from a break should drop a held impact immediately rather than
+  // leaving a card shaking at a cursor where nothing happened.
+  useEffect(() => {
+    if (!flash && impact) {
+      window.clearTimeout(hold.current)
+      hold.current = window.setTimeout(() => setImpact(null), 120)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replay.cursor])
+
+  useEffect(() => () => window.clearTimeout(hold.current), [])
 
   const winnerId = replay.atEnd || state.finished ? record.outcome?.winner_id : ''
   const isAD = man.format === 'attack_defense'
 
   return (
     <div className="relative flex min-h-0 flex-col gap-4">
-      {/* BROKE DEFENDER impact wash */}
+      {/* BROKE DEFENDER impact wash. Keyed on seq so a second break remounts
+          and re-animates instead of silently reusing the first one's element.
+          Suppressed entirely under reduced motion — a full-viewport flash is
+          exactly what that setting exists to prevent. */}
       <AnimatePresence>
-        {impact && (
+        {impact && !reduceMotion && (
           <motion.div
+            key={impact.seq}
             initial={{ opacity: 0 }}
             animate={{ opacity: [0, 0.85, 0] }}
             exit={{ opacity: 0 }}
@@ -86,12 +108,12 @@ export default function Arena({ record }: { record: MatchRecord }) {
           fighter={state.fighters.A}
           winner={winnerId === 'A'}
           loser={!!winnerId && winnerId !== 'A'}
-          shaking={impact?.defender === 'A'}
+          shaking={!reduceMotion && impact?.defender === 'A'}
         />
 
         <div className="hidden items-center justify-center lg:flex">
           <motion.div
-            animate={impact ? { scale: [1, 1.35, 1], rotate: [0, -12, 0] } : {}}
+            animate={impact && !reduceMotion ? { scale: [1, 1.35, 1], rotate: [0, -12, 0] } : {}}
             transition={{ duration: 0.5 }}
             className="font-display text-sm font-bold tracking-widest text-ink-faint"
           >
@@ -103,7 +125,7 @@ export default function Arena({ record }: { record: MatchRecord }) {
           fighter={state.fighters.B}
           winner={winnerId === 'B'}
           loser={!!winnerId && winnerId !== 'B'}
-          shaking={impact?.defender === 'B'}
+          shaking={!reduceMotion && impact?.defender === 'B'}
         />
       </div>
 
@@ -117,9 +139,30 @@ export default function Arena({ record }: { record: MatchRecord }) {
         )}
       </AnimatePresence>
 
-      <div className="min-h-[220px] flex-1">
+      {/* flex-1 can't grow inside an auto-height column, so the log was pinned
+          at its min-height forever. Give it a viewport-relative height instead. */}
+      <div className="h-[clamp(220px,34vh,460px)]">
         <EventFeed feed={state.feed} />
       </div>
+
+      {/* Screen readers get the beats, not all 25 events — announcing every
+          tick of a 4x autoplay is noise, not information. */}
+      <p aria-live="polite" className="sr-only">
+        {liveSummary(state, replay.atEnd, record.outcome?.reason)}
+      </p>
     </div>
   )
+}
+
+/**
+ * A one-line spoken summary of where the replay is. Deliberately coarse: the
+ * feed itself is a `role="log"`, and announcing every event of a 4x autoplay
+ * would bury the moments that matter.
+ */
+function liveSummary(state: ReplayState, atEnd: boolean, reason?: string): string {
+  if (atEnd || state.finished) return `Match over. ${reason?.replace(/_/g, ' ') ?? ''}`.trim()
+  const broke = (['A', 'B'] as const).find(s => state.fighters[s].broke)
+  if (broke) return `Fighter ${broke} broke the opponent's solution.`
+  if (state.phase) return `${state.phase} phase.`
+  return ''
 }

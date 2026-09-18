@@ -1,11 +1,10 @@
-import { Pause, Play, RotateCcw } from 'lucide-react'
+import { ChevronsRight, Pause, Play, RotateCcw } from 'lucide-react'
 import { useMemo } from 'react'
 import type { MatchEvent } from '../../api/types'
 import { side } from '../../api/types'
 import type { Replay, Speed } from '../../replay/useReplay'
 
 const SPEEDS: { value: Speed; label: string }[] = [
-  { value: 0, label: 'skip' },
   { value: 4, label: '4×' },
   { value: 2, label: '2×' },
   { value: 1, label: '1×' },
@@ -68,11 +67,26 @@ export default function ReplayControls({ replay, events }: { replay: Replay; eve
           <RotateCcw size={13} />
         </button>
 
-        <div className="ml-1 flex items-center gap-1 rounded-lg border border-arena-line bg-arena-raised/40 p-0.5">
+        <button
+          onClick={replay.skipToEnd}
+          aria-label="Skip to end of replay"
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-arena-line bg-arena-raised/60 text-ink-dim transition-colors hover:border-gold/40 hover:text-ink"
+        >
+          <ChevronsRight size={14} />
+        </button>
+
+        {/* aria-pressed, not colour alone: the active speed was conveyed only
+            by a gold tint, which is invisible to assistive tech. */}
+        <div
+          role="group"
+          aria-label="Playback speed"
+          className="ml-1 flex items-center gap-1 rounded-lg border border-arena-line bg-arena-raised/40 p-0.5"
+        >
           {SPEEDS.map(s => (
             <button
               key={s.label}
               onClick={() => replay.setSpeed(s.value)}
+              aria-pressed={replay.speed === s.value}
               className={`rounded px-2 py-1 text-[11px] font-medium transition-colors ${
                 replay.speed === s.value
                   ? 'bg-gold/15 text-gold'
@@ -95,11 +109,27 @@ export default function ReplayControls({ replay, events }: { replay: Replay; eve
         </span>
       </div>
 
-      {/* Timeline */}
+      {/* Timeline.
+          The range input carries the real semantics and keyboard behaviour but
+          is opacity-0 over custom chrome — which also hides its focus outline,
+          leaving keyboard users with no idea the scrubber is focused. It is
+          therefore a `peer` declared FIRST, so the visible playhead and track
+          can render the focus state via peer-focus-visible. */}
       <div className="relative mt-3 h-9">
-        <div className="absolute inset-x-0 top-4 h-px bg-arena-line" />
+        <input
+          type="range"
+          min={0}
+          max={replay.total}
+          value={replay.cursor}
+          onChange={e => replay.seek(Number(e.target.value))}
+          aria-label="Scrub replay timeline"
+          aria-valuetext={`Event ${replay.cursor} of ${replay.total}`}
+          className="peer absolute inset-x-0 top-0 z-20 h-8 w-full cursor-pointer opacity-0"
+        />
 
-        <div className="absolute inset-x-0 top-0 flex h-8 items-end">
+        <div className="pointer-events-none absolute inset-x-0 top-4 h-px bg-arena-line peer-focus-visible:bg-gold/60" />
+
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex h-8 items-end">
           {ticks.map(({ i, h, tone }) => {
             const left = replay.total > 0 ? (i / replay.total) * 100 : 0
             const reached = i < replay.cursor
@@ -121,26 +151,17 @@ export default function ReplayControls({ replay, events }: { replay: Replay; eve
 
         {/* Played portion */}
         <div
-          className="absolute top-4 h-px bg-gradient-to-r from-gold/40 to-gold transition-[width] duration-150"
+          className="pointer-events-none absolute top-4 h-px bg-gradient-to-r from-gold/40 to-gold transition-[width] duration-150"
           style={{ width: `${pct}%` }}
         />
 
-        {/* Playhead */}
+        {/* Playhead — grows a ring when the hidden input has keyboard focus.
+            Must be a DIRECT sibling of the peer: Tailwind compiles peer-* to a
+            general-sibling selector (`~`), so styles on a nested child never
+            match. */}
         <div
-          className="pointer-events-none absolute top-4 z-10 -translate-x-1/2 -translate-y-1/2"
+          className="pointer-events-none absolute top-4 z-10 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-gold bg-arena-void shadow-[0_0_10px_-1px_var(--color-gold)] transition-all peer-focus-visible:h-4 peer-focus-visible:w-4 peer-focus-visible:shadow-[0_0_0_3px_rgba(240,178,63,0.35)]"
           style={{ left: `${pct}%` }}
-        >
-          <div className="h-2.5 w-2.5 rounded-full border-2 border-gold bg-arena-void shadow-[0_0_10px_-1px_var(--color-gold)]" />
-        </div>
-
-        <input
-          type="range"
-          min={0}
-          max={replay.total}
-          value={replay.cursor}
-          onChange={e => replay.seek(Number(e.target.value))}
-          aria-label="Scrub replay timeline"
-          className="absolute inset-x-0 top-0 h-8 w-full cursor-pointer opacity-0"
         />
       </div>
     </div>

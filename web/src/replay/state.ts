@@ -125,9 +125,14 @@ export function reduce(state: ReplayState, e: MatchEvent): ReplayState {
       const f = next.fighters[who]
       f.phase = 'judged'
       f.verdicts = [...f.verdicts, verdict]
-      f.passed = passed
-      f.total = total
-      f.status = `${verdict} · ${passed}/${total} tests`
+      // A judge-internal error reports 0/0 — it means "the run never produced a
+      // score", not "every test failed". Overwriting on total===0 wiped a
+      // fighter's meter back to empty on an infrastructure hiccup.
+      if (total > 0) {
+        f.passed = passed
+        f.total = total
+      }
+      f.status = total > 0 ? `${verdict} · ${passed}/${total} tests` : `${verdict} · not scored`
       push({ kind: 'submission', actor: who, text: `${passed}/${total} tests`, verdict })
       break
     }

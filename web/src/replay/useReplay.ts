@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { MatchRecord } from '../api/types'
 import { pacing, project, type ReplayState } from './state'
 
-export type Speed = 0 | 1 | 2 | 4
+/**
+ * Playback rate. There is deliberately no 0 here: modelling "skip to end" as a
+ * speed made Restart a no-op (rewind to 0, then the playback effect instantly
+ * re-drained to the end) and did nothing at all while paused. Skipping is an
+ * action — `skipToEnd` — not a rate.
+ */
+export type Speed = 1 | 2 | 4
 
 export interface Replay {
   state: ReplayState
@@ -15,6 +21,7 @@ export interface Replay {
   pause: () => void
   toggle: () => void
   restart: () => void
+  skipToEnd: () => void
   seek: (cursor: number) => void
   setSpeed: (s: Speed) => void
 }
@@ -50,14 +57,12 @@ export function useReplay(rec: MatchRecord | null): Replay {
     clear()
     if (!playing || cursor >= total) return
 
-    // speed 0 = "instant": drain the whole log in one frame.
-    if (speed === 0) {
-      setCursor(total)
-      setPlaying(false)
-      return
-    }
-
-    const delay = pacing(events[cursor], events[cursor + 1], speed)
+    // The cursor counts events already applied, so the frame on screen ends at
+    // events[cursor-1] and the one we're about to reveal is events[cursor].
+    // Pacing must measure that gap — reading [cursor, cursor+1] held for the
+    // wrong interval and gave beat events their emphasis one frame late.
+    const shown = cursor > 0 ? events[cursor - 1] : events[0]
+    const delay = cursor > 0 ? pacing(shown, events[cursor], speed) : 0
     timer.current = window.setTimeout(() => setCursor(c => Math.min(c + 1, total)), delay)
     return clear
   }, [playing, cursor, total, speed, events])
@@ -74,6 +79,12 @@ export function useReplay(rec: MatchRecord | null): Replay {
     setCursor(0)
     setPlaying(true)
   }, [])
+
+  const skipToEnd = useCallback(() => {
+    clear()
+    setPlaying(false)
+    setCursor(total)
+  }, [total])
 
   const seek = useCallback(
     (c: number) => {
@@ -112,13 +123,13 @@ export function useReplay(rec: MatchRecord | null): Replay {
           break
         case 'End':
           e.preventDefault()
-          seek(total)
+          skipToEnd()
           break
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cursor, total, seek, restart])
+  }, [cursor, total, seek, restart, skipToEnd])
 
   return {
     state: state ?? project({ manifest: { fighters: {} } } as MatchRecord, 0),
@@ -134,6 +145,7 @@ export function useReplay(rec: MatchRecord | null): Replay {
     },
     toggle: () => setPlaying(p => !p),
     restart,
+    skipToEnd,
     seek,
     setSpeed,
   }
