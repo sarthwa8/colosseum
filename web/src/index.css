@@ -1,0 +1,152 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens. Tailwind v4 generates utilities straight from @theme, so
+   --color-fighter-a yields bg-fighter-a / text-fighter-a / border-fighter-a.
+
+   Fighters get fixed hues (A cool, B hot) used on every surface that mentions
+   them — cards, feed rows, meters, timeline ticks — so you never have to read
+   the letter to know who acted.
+--------------------------------------------------------------------------- */
+@theme {
+  --color-arena-void: #08080a;
+  --color-arena-bg: #0b0b0f;
+  --color-arena-surface: #121218;
+  --color-arena-raised: #1a1a22;
+  --color-arena-line: #262630;
+  --color-arena-line-soft: #1d1d25;
+
+  --color-ink: #eceaf0;
+  --color-ink-dim: #9a95a6;
+  --color-ink-faint: #635f70;
+
+  --color-gold: #f0b23f;
+  --color-gold-deep: #b57c1d;
+
+  --color-fighter-a: #3ad4cf;
+  --color-fighter-a-deep: #12807d;
+  --color-fighter-b: #f4568f;
+  --color-fighter-b-deep: #9c2d55;
+
+  --color-pass: #4ade80;
+  --color-fail: #f4635a;
+  --color-limit: #f0b23f;
+
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --animate-sweep: sweep 2.4s ease-in-out infinite;
+  --animate-pulse-ring: pulse-ring 1.6s ease-out infinite;
+  --animate-rise: rise 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes sweep {
+  0% { transform: translateX(-110%); }
+  60%, 100% { transform: translateX(210%); }
+}
+
+@keyframes pulse-ring {
+  0% { opacity: 0.55; transform: scale(0.96); }
+  70% { opacity: 0; transform: scale(1.5); }
+  100% { opacity: 0; transform: scale(1.5); }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-arena-void);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Arena floor: a faint radial vignette + grid so the page reads as a space,
+   not a document. Cheap (pure CSS), always on, never competes with content. */
+.arena-floor {
+  background-image:
+    radial-gradient(ellipse 80% 60% at 50% -10%, rgba(240, 178, 63, 0.09), transparent 70%),
+    radial-gradient(ellipse 60% 50% at 8% 40%, rgba(58, 212, 207, 0.05), transparent 65%),
+    radial-gradient(ellipse 60% 50% at 92% 55%, rgba(244, 86, 143, 0.05), transparent 65%),
+    linear-gradient(to bottom, var(--color-arena-void), var(--color-arena-bg));
+}
+
+.grid-veil::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 75% 65% at 50% 35%, #000 30%, transparent 78%);
+}
+
+/* Faint scanline texture — the terminal heritage, dialed way down so it reads
+   as material rather than costume. */
+.scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.016) 0px,
+    rgba(255, 255, 255, 0.016) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+.hairline {
+  border: 1px solid var(--color-arena-line);
+}
+
+/* Scrollbars: thin and in-palette, because this app is mostly scrolling lists. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-arena-line) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--color-arena-line);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover { background: #33333f; }
+
+::selection {
+  background: rgba(240, 178, 63, 0.28);
+  color: var(--color-ink);
+}
+
+/* Focus ring that matches the theme instead of the browser default. */
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Respect the OS setting: kill decorative motion, keep the replay usable. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
