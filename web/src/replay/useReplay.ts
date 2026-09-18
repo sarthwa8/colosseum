@@ -84,6 +84,42 @@ export function useReplay(rec: MatchRecord | null): Replay {
     [total],
   )
 
+  // Transport shortcuts. A replay tool people actually scrub through needs
+  // these; guarded so they don't hijack typing in a future search field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+
+      switch (e.key) {
+        case ' ':
+          e.preventDefault()
+          if (cursor >= total && total > 0) restart()
+          else setPlaying(p => !p)
+          break
+        case 'ArrowRight':
+          e.preventDefault()
+          seek(cursor + (e.shiftKey ? 10 : 1))
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          seek(cursor - (e.shiftKey ? 10 : 1))
+          break
+        case 'Home':
+          e.preventDefault()
+          restart()
+          break
+        case 'End':
+          e.preventDefault()
+          seek(total)
+          break
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [cursor, total, seek, restart])
+
   return {
     state: state ?? project({ manifest: { fighters: {} } } as MatchRecord, 0),
     cursor,

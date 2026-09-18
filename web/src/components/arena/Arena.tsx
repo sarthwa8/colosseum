@@ -109,9 +109,11 @@ export default function Arena({ record }: { record: MatchRecord }) {
 
       <ReplayControls replay={replay} events={record.events ?? []} />
 
+      {/* keyed so AnimatePresence can track it: scrubbing back off the end
+          fades the banner out instead of popping it. */}
       <AnimatePresence>
         {(replay.atEnd || state.finished) && record.outcome && (
-          <OutcomeBanner outcome={record.outcome} />
+          <OutcomeBanner key="outcome" outcome={record.outcome} />
         )}
       </AnimatePresence>
 

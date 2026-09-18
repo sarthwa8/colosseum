@@ -56,6 +56,7 @@ export default function OutcomeBanner({ outcome }: { outcome: Outcome }) {
     <motion.div
       initial={{ opacity: 0, y: 14, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -8, scale: 0.98, transition: { duration: 0.18 } }}
       transition={{ type: 'spring', stiffness: 260, damping: 24 }}
       className="relative overflow-hidden rounded-xl border border-gold/45 bg-gradient-to-br from-gold/12 via-arena-surface to-arena-surface p-5"
     >

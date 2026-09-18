@@ -84,7 +84,13 @@ export default function ReplayControls({ replay, events }: { replay: Replay; eve
           ))}
         </div>
 
-        <span className="ml-auto font-mono text-[11px] tabular-nums text-ink-faint">
+        <span
+          className="ml-auto hidden font-mono text-[10px] text-ink-faint sm:inline"
+          title="space play/pause · ←/→ step (shift = 10) · home/end jump"
+        >
+          space · ←/→
+        </span>
+        <span className="ml-2 font-mono text-[11px] tabular-nums text-ink-faint">
           {replay.cursor}/{replay.total}
         </span>
       </div>
