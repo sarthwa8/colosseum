@@ -147,10 +147,12 @@ export function reduce(state: ReplayState, e: MatchEvent): ReplayState {
       const input = payload.attack(e).input
       next.fighters[who].phase = 'attacking'
       next.fighters[who].status = 'crafting an exploit'
+      // U+21B5, not U+23CE — the latter is missing from JetBrains Mono and
+      // falls back to a glyph that reads as part of the input.
       push({
         kind: 'attack',
         actor: who,
-        text: `submits input ${truncate(input.replace(/\n/g, '⏎'), 42)}`,
+        text: `submits input ${truncate(input.trim().replace(/\n/g, ' ↵ '), 42)}`,
       })
       break
     }
@@ -189,8 +191,18 @@ export function reduce(state: ReplayState, e: MatchEvent): ReplayState {
 
     case 'match_finished': {
       next.finished = true
-      next.fighters.A.phase = 'done'
-      next.fighters.B.phase = 'done'
+      // Settle each fighter into a terminal status. Without this the card keeps
+      // whatever transient line it had mid-action ("crafting an exploit") long
+      // after the match is over.
+      for (const s of ['A', 'B'] as const) {
+        const f = next.fighters[s]
+        f.phase = 'done'
+        if (f.forfeit) continue
+        const last = f.verdicts[f.verdicts.length - 1]
+        if (!last) f.status = 'no submission'
+        else if (last === 'AC') f.status = `solved · ${f.passed}/${f.total} tests`
+        else f.status = `${last} · ${f.passed}/${f.total} tests`
+      }
       break
     }
 

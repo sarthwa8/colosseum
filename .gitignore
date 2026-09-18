@@ -13,15 +13,10 @@
 .env
 .env.*
 
-# Frontend build artifacts
+# Frontend source deps. internal/web/dist IS committed on purpose: go:embed
+# resolves at compile time, so the binary must not depend on a Node toolchain.
 /web/node_modules/
-/web/dist/
 
 # OS / editor
 .DS_Store
 *.swp
-
-# Frontend
-/web/node_modules/
-/web/dist/
-/internal/web/dist/

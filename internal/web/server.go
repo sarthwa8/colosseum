@@ -1,14 +1,20 @@
 // Package web serves the spectator UI: an embedded single-page app that lists
 // saved matches and replays each one from its event log in the browser — the
 // same event stream the terminal renders, on the same data the ladder scores.
-// No build step; the page is go:embed'd into the binary.
+//
+// The UI is a React/Vite bundle built from ../../web into dist/ and go:embed'd
+// here, so the binary stays self-contained: no Node toolchain, no separate
+// server, `go install` just works. dist/ is committed for that reason — go:embed
+// resolves at compile time, so a missing directory is a build error.
 package web
 
 import (
 	"embed"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,7 +22,7 @@ import (
 	"github.com/sarthaksukhral/colosseum/internal/match"
 )
 
-//go:embed index.html
+//go:embed all:dist
 var content embed.FS
 
 // Server serves match records from a data directory.
@@ -29,24 +35,43 @@ func NewServer(dataDir string) *Server { return &Server{dataDir: dataDir} }
 // Handler returns the HTTP routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.index)
+	mux.HandleFunc("/", s.static)
 	mux.HandleFunc("/api/matches", s.listMatches)
 	mux.HandleFunc("/api/matches/", s.getMatch)
 	mux.HandleFunc("/api/report", s.report)
 	return mux
 }
 
-func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
+// static serves the built SPA. Hashed asset filenames are immutable, so they
+// get a long cache; index.html must not be cached, since it's the file that
+// points at the current hashes.
+func (s *Server) static(w http.ResponseWriter, r *http.Request) {
+	dist, err := fs.Sub(content, "dist")
+	if err != nil {
+		http.Error(w, "ui bundle missing", http.StatusInternalServerError)
 		return
 	}
-	b, err := content.ReadFile("index.html")
+
+	name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+	if name != "" && name != "." {
+		if f, err := dist.Open(name); err == nil {
+			f.Close()
+			if strings.HasPrefix(name, "assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
+			http.FileServer(http.FS(dist)).ServeHTTP(w, r)
+			return
+		}
+	}
+
+	// SPA fallback: unknown paths render the app shell, not a 404.
+	b, err := fs.ReadFile(dist, "index.html")
 	if err != nil {
-		http.Error(w, "index missing", http.StatusInternalServerError)
+		http.Error(w, "ui bundle missing", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(b)
 }
 
