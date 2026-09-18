@@ -52,6 +52,14 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The SPA fallback must not swallow the API surface: an unknown /api/ path
+	// has to 404, or a client hitting a bad endpoint gets the HTML shell and a
+	// baffling JSON parse error instead of a status it can act on.
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		http.NotFound(w, r)
+		return
+	}
+
 	name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 	if name != "" && name != "." {
 		if f, err := dist.Open(name); err == nil {
@@ -92,7 +100,9 @@ func (s *Server) listMatches(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, []matchSummary{}) // empty is fine (no matches yet)
 		return
 	}
-	var out []matchSummary
+	// Non-nil so an empty arena encodes as [] rather than null — the UI maps
+	// over this directly.
+	out := []matchSummary{}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
